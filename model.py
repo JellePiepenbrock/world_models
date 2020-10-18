@@ -25,24 +25,27 @@ RENDER_DELAY = False
 record_video = False
 MEAN_MODE = False
 
-def activations(a):
-  a = np.tanh(a)
-  return a
 
-class Controller():
+def activations(a):
+    a = np.tanh(a)
+    return a
+
+
+class Controller:
     def __init__(self):
         self.time_factor = config.TIME_FACTOR
         self.noise_bias = config.NOISE_BIAS
-        self.output_noise=config.OUTPUT_NOISE
-        self.activations=activations
+        self.output_noise = config.OUTPUT_NOISE
+        self.activations = activations
         self.output_size = config.CONTR_OUTPUT_SIZE
+
 
 def make_model(experiment_name, gen_vae_data=False):
     vae = VAE()
-    vae.set_weights('./weights/vae/weights_{}.h5'.format(experiment_name))
+    vae.set_weights("./weights/vae/weights_{}.h5".format(experiment_name))
 
     rnn = RNN()
-    rnn.set_weights('./weights/rnn/weights_{}.h5'.format(experiment_name))
+    rnn.set_weights("./weights/rnn/weights_{}.h5".format(experiment_name))
 
     controller = Controller()
 
@@ -90,7 +93,7 @@ class Model:
         for shape in self.shapes:
             self.weight.append(np.zeros(shape=shape))
             self.bias.append(np.zeros(shape=shape[1]))
-            self.param_count += (np.product(shape) + shape[1])
+            self.param_count += np.product(shape) + shape[1]
             if self.output_noise[idx]:
                 self.param_count += shape[1]
             log_std = np.zeros(shape=shape[1])
@@ -116,7 +119,7 @@ class Model:
             w = self.weight[i]
             b = self.bias[i]
             h = np.matmul(h, w) + b
-            if (self.output_noise[i] and (not mean_mode)):
+            if self.output_noise[i] and (not mean_mode):
                 out_size = self.shapes[i][1]
                 out_std = self.bias_std[i]
                 output_noise = np.random.randn(out_size) * out_std
@@ -133,14 +136,16 @@ class Model:
             b_shape = self.shapes[i][1]
             s_w = np.product(w_shape)
             s = s_w + b_shape
-            chunk = np.array(model_params[pointer:pointer + s])
+            chunk = np.array(model_params[pointer : pointer + s])
             self.weight[i] = chunk[:s_w].reshape(w_shape)
             self.bias[i] = chunk[s_w:].reshape(b_shape)
             pointer += s
             if self.output_noise[i]:
                 s = b_shape
-                self.bias_log_std[i] = np.array(model_params[pointer:pointer + s])
-                self.bias_std[i] = np.exp(self.sigma_factor * self.bias_log_std[i] + self.sigma_bias)
+                self.bias_log_std[i] = np.array(model_params[pointer : pointer + s])
+                self.bias_std[i] = np.exp(
+                    self.sigma_factor * self.bias_log_std[i] + self.sigma_bias
+                )
                 if self.render_mode:
                     print("bias_std, layer", i, self.bias_std[i])
                 pointer += s
@@ -148,7 +153,7 @@ class Model:
     def load_model(self, filename):
         with open(filename) as f:
             data = json.load(f)
-        print('loading file %s' % (filename))
+        print("loading file %s" % (filename))
         self.data = data
         model_params = np.array(data[0])  # assuming other stuff is in data
         self.set_model_params(model_params)
@@ -174,22 +179,28 @@ def evaluate(model):
         reward, t = simulate(model, train_mode=False, render_mode=False, num_episode=1)
         print("Reward: ", reward, "Current total reward: ", total_reward)
         total_reward += reward[0]
-    return (total_reward / float(N))
+    return total_reward / float(N)
+
 
 def save_deconstruct_vae_img(path, vae, obs, t, counter, original=None, show_img=False):
     # Decode VAE obs and reconstruct
     vae_decoded_obs = vae.decoder.predict(np.array([obs]))
     vae_decoded_obs *= 255
-    plt.imsave('{}{}/timestep_{}_{}.png'.format(path, config.Z_DIM, t, counter),
-               vae_decoded_obs.astype(int).squeeze())
+    plt.imsave(
+        "{}{}/timestep_{}_{}.png".format(path, config.Z_DIM, t, counter),
+        vae_decoded_obs.astype(int).squeeze(),
+    )
     if original is not None:
-        print('image shape {}'.format(original.shape))
+        print("image shape {}".format(original.shape))
         original *= 255
-        plt.imsave('{}{}/timestep_{}_{}_original.png'.format(path, config.Z_DIM, t, counter),
-                   original.astype(int).squeeze())
+        plt.imsave(
+            "{}{}/timestep_{}_{}_original.png".format(path, config.Z_DIM, t, counter),
+            original.astype(int).squeeze(),
+        )
     if show_img:
         plt.imshow(vae_decoded_obs.astype(int).squeeze())
         plt.show()
+
 
 def get_mixture_coef_cust(y_pred):
     d = config.GAUSSIAN_MIXTURES * config.Z_DIM
@@ -197,12 +208,14 @@ def get_mixture_coef_cust(y_pred):
     rollout_length = np.shape(y_pred)[1]
 
     pi = y_pred[:, :, :d]
-    mu = y_pred[:, :, d:(2 * d)]
-    log_sigma = y_pred[:, :, (2 * d):(3 * d)]
+    mu = y_pred[:, :, d : (2 * d)]
+    log_sigma = y_pred[:, :, (2 * d) : (3 * d)]
 
     pi = np.reshape(pi, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
     mu = np.reshape(mu, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
-    log_sigma = np.reshape(log_sigma, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
+    log_sigma = np.reshape(
+        log_sigma, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM]
+    )
 
     pi = np.exp(pi) / np.sum(np.exp(pi), axis=2, keepdims=True)
     sigma = np.exp(log_sigma)
@@ -213,7 +226,9 @@ def get_mixture_coef_cust(y_pred):
 def tf_normal_cust(y_true, mu, sigma, pi):
     rollout_length = np.shape(y_true)[1]
     y_true = np.tile(y_true, (1, 1, config.GAUSSIAN_MIXTURES))
-    y_true = np.reshape(y_true, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
+    y_true = np.reshape(
+        y_true, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM]
+    )
 
     oneDivSqrtTwoPI = 1 / math.sqrt(2 * math.pi)
     result = y_true - mu
@@ -224,7 +239,18 @@ def tf_normal_cust(y_true, mu, sigma, pi):
     result = np.sum(result, axis=2)
     return result
 
-def simulate(model, train_mode=False, render_mode=True, num_episode=1, seed=-1, max_len=-1, generate_data_mode=False, save_images_VAE=False, counter=0):
+
+def simulate(
+    model,
+    train_mode=False,
+    render_mode=True,
+    num_episode=1,
+    seed=-1,
+    max_len=-1,
+    generate_data_mode=False,
+    save_images_VAE=False,
+    counter=0,
+):
     reward_list = []
     t_list = []
 
@@ -234,7 +260,7 @@ def simulate(model, train_mode=False, render_mode=True, num_episode=1, seed=-1, 
         if max_len < max_episode_length:
             max_episode_length = max_len
 
-    if (seed >= 0):
+    if seed >= 0:
         random.seed(seed)
         np.random.seed(seed)
         model.env.seed(seed)
@@ -274,19 +300,26 @@ def simulate(model, train_mode=False, render_mode=True, num_episode=1, seed=-1, 
             obs, reward, done, info = model.env.step(action)
             obs = resize(obs, (64, 64, 3))
 
-            input_to_rnn = [np.array([[np.concatenate([vae_encoded_obs, [action]])]]), np.array([model.hidden]),
-                            np.array([model.cell_values])]
+            input_to_rnn = [
+                np.array([[np.concatenate([vae_encoded_obs, [action]])]]),
+                np.array([model.hidden]),
+                np.array([model.cell_values]),
+            ]
 
             mdn, h, c = model.rnn.forward.predict(input_to_rnn)
             if save_images_VAE:
                 if t % 25 == 0:
-                    save_deconstruct_vae_img('./images/decoded_VAE/', vae, vae_encoded_obs, t, counter)
+                    save_deconstruct_vae_img(
+                        "./images/decoded_VAE/", vae, vae_encoded_obs, t, counter
+                    )
 
                     pi, mu, sigma = get_mixture_coef_cust(mdn)
                     result = tf_normal_cust(mdn, pi, mu, sigma)
 
                     for z in range(15):
-                        save_deconstruct_vae_img('./images/decoded_RNN/', vae, result[z][0], t + z, counter)
+                        save_deconstruct_vae_img(
+                            "./images/decoded_RNN/", vae, result[z][0], t + z, counter
+                        )
 
             model.hidden = h[0]
             model.cell_values = c[0]
@@ -310,8 +343,18 @@ def simulate(model, train_mode=False, render_mode=True, num_episode=1, seed=-1, 
 
     return reward_list, t_list
 
-def main(file_name, generate_data_mode, render_mode, find_custom_steps, perc, pick_custom_steps_after_min, save_images_VAE, gen_int=True):
-    env_name = 'space'
+
+def main(
+    file_name,
+    generate_data_mode,
+    render_mode,
+    find_custom_steps,
+    perc,
+    pick_custom_steps_after_min,
+    save_images_VAE,
+    gen_int=True,
+):
+    env_name = "space"
     filename = file_name
     the_seed = 111
 
@@ -348,9 +391,17 @@ def main(file_name, generate_data_mode, render_mode, find_custom_steps, perc, pi
 
         i = 0
         while i < batch_size:
-            reward, steps_taken, obs_sequence, action_sequence = simulate(model, train_mode=False, render_mode=render_mode, num_episode=1,
-                                           max_len=config.MAX_LENGTH, generate_data_mode=generate_data_mode, save_images_VAE=save_images_VAE, counter=cnt)
-            cnt +=1
+            reward, steps_taken, obs_sequence, action_sequence = simulate(
+                model,
+                train_mode=False,
+                render_mode=render_mode,
+                num_episode=1,
+                max_len=config.MAX_LENGTH,
+                generate_data_mode=generate_data_mode,
+                save_images_VAE=save_images_VAE,
+                counter=cnt,
+            )
+            cnt += 1
             total_reward += reward[0]
             print("episode", i, "reward =", reward[0])
             obs_sequence = np.array(obs_sequence)
@@ -362,7 +413,9 @@ def main(file_name, generate_data_mode, render_mode, find_custom_steps, perc, pi
                     gen_int = False
                     print(episode_length + rand_start)
                 if obs_sequence.shape[0] >= (episode_length + rand_start):
-                    obs_data.append(obs_sequence[rand_start:episode_length + rand_start,:,:])
+                    obs_data.append(
+                        obs_sequence[rand_start : episode_length + rand_start, :, :]
+                    )
                     action_data.append(action_sequence)
                     s += 1
                     i += 1
@@ -372,18 +425,28 @@ def main(file_name, generate_data_mode, render_mode, find_custom_steps, perc, pi
                 i += 1
                 if i == min(pick_custom_steps_after_min, batch_size - 1):
                     episode_length = int(np.percentile(shape_list, perc))
-                    print('After {} iterations we picked the value {} as a custom step'.format(i, episode_length))
+                    print(
+                        "After {} iterations we picked the value {} as a custom step".format(
+                            i, episode_length
+                        )
+                    )
                     i = 0
                     find_custom_steps = False
                     del shape_list
 
         # Create folder if not exists
-        save_directory = 'data/' + sys.argv[1]
+        save_directory = "data/" + sys.argv[1]
         if not os.path.exists(save_directory):
             os.makedirs(save_directory)
 
-        np.save(save_directory + '/obs_data_' + config.ENV_NAME + '_' + str(batch_count), obs_data)
-        np.save(save_directory + '/action_data_' + config.ENV_NAME + '_' + str(batch_count), action_data)
+        np.save(
+            save_directory + "/obs_data_" + config.ENV_NAME + "_" + str(batch_count),
+            obs_data,
+        )
+        np.save(
+            save_directory + "/action_data_" + config.ENV_NAME + "_" + str(batch_count),
+            action_data,
+        )
 
         print("seed", the_seed, "average_reward", total_reward / 100)
 
@@ -391,8 +454,9 @@ def main(file_name, generate_data_mode, render_mode, find_custom_steps, perc, pi
 
     model.env.close()
 
+
 if __name__ == "__main__":
-    file_name = './weights/controller/space.cma.' + sys.argv[1] +'.best.json'
+    file_name = "./weights/controller/space.cma." + sys.argv[1] + ".best.json"
     generate_data_mode = True
     render_mode = True
     # Set this to False if you just want to use the settings from config.py
@@ -401,4 +465,12 @@ if __name__ == "__main__":
     save_images_VAE = True
     # Custom steps after we pick our 60th percentile, min(batch_size, pick_custom..).
     pick_custom_steps_after_min = 8
-    main(file_name, generate_data_mode, render_mode, find_custom_steps, perc, pick_custom_steps_after_min, save_images_VAE)
+    main(
+        file_name,
+        generate_data_mode,
+        render_mode,
+        find_custom_steps,
+        perc,
+        pick_custom_steps_after_min,
+        save_images_VAE,
+    )

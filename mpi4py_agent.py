@@ -13,7 +13,8 @@ import config
 
 import time
 
-def initialize_settings(c, r, sigma_init=0.1, sigma_decay=0.9999, init_opt=''):
+
+def initialize_settings(c, r, sigma_init=0.1, sigma_decay=0.9999, init_opt=""):
     global es, model, comm, rank
     comm, rank = c, r
     model = make_model(sys.argv[1])
@@ -21,22 +22,21 @@ def initialize_settings(c, r, sigma_init=0.1, sigma_decay=0.9999, init_opt=''):
     num_params = model.param_count
 
     if len(init_opt) > 0:
-        es = pickle.load(open(init_opt, 'rb'))
+        es = pickle.load(open(init_opt, "rb"))
     else:
-        if config.OPTIMIZER == 'cma':
-            cma = CMAES(num_params,
-                        sigma_init=sigma_init,
-                        popsize=config.POPULATION)
+        if config.OPTIMIZER == "cma":
+            cma = CMAES(num_params, sigma_init=sigma_init, popsize=config.POPULATION)
             es = cma
 
     global PRECISION
     PRECISION = 10000
     global SOLUTION_PACKET_SIZE
-    SOLUTION_PACKET_SIZE= (5 + num_params) * config.NUM_WORKER_TRIAL
+    SOLUTION_PACKET_SIZE = (5 + num_params) * config.NUM_WORKER_TRIAL
     global RESULT_PACKET_SIZE
     RESULT_PACKET_SIZE = 4 * config.NUM_WORKER_TRIAL
 
     return es, model, PRECISION, SOLUTION_PACKET_SIZE, RESULT_PACKET_SIZE
+
 
 class OldSeeder:
     def __init__(self, init_seed=0):
@@ -86,7 +86,9 @@ def decode_solution_packet(packet):
     packets = np.split(packet, config.NUM_WORKER_TRIAL)
     result = []
     for p in packets:
-        result.append([p[0], p[1], p[2], p[3], p[4], p[5:].astype(np.float) / PRECISION])
+        result.append(
+            [p[0], p[1], p[2], p[3], p[4], p[5:].astype(np.float) / PRECISION]
+        )
     return result
 
 
@@ -112,14 +114,19 @@ def decode_result_packet(packet):
 
 
 def worker(weights, seed, max_len, new_model, train_mode_int=1):
-    train_mode = (train_mode_int == 1)
+    train_mode = train_mode_int == 1
     new_model.set_model_params(weights)
 
-    reward_list, t_list = simulate(new_model,
-                                   train_mode=train_mode, render_mode=True, num_episode=config.NUM_EPISODE, seed=seed,
-                                   max_len=max_len)
+    reward_list, t_list = simulate(
+        new_model,
+        train_mode=train_mode,
+        render_mode=True,
+        num_episode=config.NUM_EPISODE,
+        seed=seed,
+        max_len=max_len,
+    )
 
-    if config.BATCH_MODE == 'min':
+    if config.BATCH_MODE == "min":
         reward = np.min(reward_list)
     else:
         reward = np.mean(reward_list)
@@ -127,17 +134,17 @@ def worker(weights, seed, max_len, new_model, train_mode_int=1):
     return reward, t
 
 
-def send_packets_to_slaves(packet_list, current_env_name):
+def send_packets_to_workers(packet_list, current_env_name):
     num_worker = comm.Get_size()
-    #assert len(packet_list) == num_worker - 1
+    # assert len(packet_list) == num_worker - 1
     for i in range(1, num_worker):
         packet = packet_list[i - 1]
-        #assert (len(packet) == SOLUTION_PACKET_SIZE)
-        packet = {'result': packet, 'current_env_name': current_env_name}
+        # assert (len(packet) == SOLUTION_PACKET_SIZE)
+        packet = {"result": packet, "current_env_name": current_env_name}
         comm.send(packet, dest=i)
 
 
-def receive_packets_from_slaves():
+def receive_packets_from_workers():
     result_packet = np.empty(RESULT_PACKET_SIZE, dtype=np.int32)
 
     reward_list_total = np.zeros((config.POPULATION, 2))
@@ -149,14 +156,14 @@ def receive_packets_from_slaves():
         for result in results:
             worker_id = int(result[0])
             possible_error = "work_id = " + str(worker_id) + " source = " + str(i)
-            #assert worker_id == i, possible_error
+            # assert worker_id == i, possible_error
             idx = int(result[1])
             reward_list_total[idx, 0] = result[2]
             reward_list_total[idx, 1] = result[3]
             check_results[idx] = 0
 
     check_sum = check_results.sum()
-    #assert check_sum == 0, check_sum
+    # assert check_sum == 0, check_sum
     return reward_list_total
 
 
@@ -168,13 +175,15 @@ def evaluate_batch(model_params, max_len):
 
     seeds = np.arange(es.popsize)
 
-    packet_list = encode_solution_packets(seeds, solutions, train_mode=0, max_len=max_len)
+    packet_list = encode_solution_packets(
+        seeds, solutions, train_mode=0, max_len=max_len
+    )
 
     overall_rewards = []
 
-    send_packets_to_slaves(packet_list, config.ENV_NAME)
-    packets_from_slaves = receive_packets_from_slaves()
-    reward_list = packets_from_slaves[:, 0] # get rewards
+    send_packets_to_workers(packet_list, config.ENV_NAME)
+    packets_from_workers = receive_packets_from_workers()
+    reward_list = packets_from_workers[:, 0]  # get rewards
     print(reward_list)
     overall_rewards.append(np.mean(reward_list))
     print(overall_rewards)

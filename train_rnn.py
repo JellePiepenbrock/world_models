@@ -11,17 +11,20 @@ import tensorflow as tf
 
 HIDDEN_UNITS = 256
 
+
 def get_mixture_coef(y_pred):
     d = config.GAUSSIAN_MIXTURES * config.Z_DIM
     rollout_length = K.shape(y_pred)[1]
 
     pi = y_pred[:, :, :d]
-    mu = y_pred[:, :, d:(2 * d)]
-    log_sigma = y_pred[:, :, (2 * d):(3 * d)]
+    mu = y_pred[:, :, d : (2 * d)]
+    log_sigma = y_pred[:, :, (2 * d) : (3 * d)]
 
     pi = K.reshape(pi, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
     mu = K.reshape(mu, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
-    log_sigma = K.reshape(log_sigma, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
+    log_sigma = K.reshape(
+        log_sigma, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM]
+    )
 
     pi = K.exp(pi) / K.sum(K.exp(pi), axis=2, keepdims=True)
     sigma = K.exp(log_sigma)
@@ -32,7 +35,9 @@ def get_mixture_coef(y_pred):
 def tf_normal(y_true, mu, sigma, pi):
     rollout_length = K.shape(y_true)[1]
     y_true = K.tile(y_true, (1, 1, config.GAUSSIAN_MIXTURES))
-    y_true = K.reshape(y_true, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM])
+    y_true = K.reshape(
+        y_true, [-1, rollout_length, config.GAUSSIAN_MIXTURES, config.Z_DIM]
+    )
 
     oneDivSqrtTwoPI = 1 / math.sqrt(2 * math.pi)
     result = y_true - mu
@@ -45,7 +50,8 @@ def tf_normal(y_true, mu, sigma, pi):
 
     return result
 
-class RNN():
+
+class RNN:
     def __init__(self):
         self.models = self._build()
         self.model = self.models[0]
@@ -58,7 +64,9 @@ class RNN():
         lstm = LSTM(HIDDEN_UNITS, return_sequences=True, return_state=True)
 
         lstm_output, _, _ = lstm(input_x)
-        mdn = Dense(config.GAUSSIAN_MIXTURES * (3 * config.Z_DIM))(lstm_output)  # + discrete_dim
+        mdn = Dense(config.GAUSSIAN_MIXTURES * (3 * config.Z_DIM))(
+            lstm_output
+        )  # + discrete_dim
 
         rnn = Model(input_x, mdn)
 
@@ -70,24 +78,31 @@ class RNN():
 
         forward = Model([input_x] + inputs, [mdn, state_h, state_c])
 
-        def r_loss(y_true, y_pred):
+        def reconstruction_loss(y_true, y_pred):
             pi, mu, sigma = get_mixture_coef(y_pred)
 
-            res = tf_normal(y_true, mu, sigma, pi)
+            result = tf_normal(y_true, mu, sigma, pi)
 
-            res = -K.log(res + 1e-8)
-            res = K.mean(res, axis=(1, 2))
-            return res
+            result = -K.log(result + 1e-8)
+            result = K.mean(result, axis=(1, 2))
+            return result
 
         def kl_loss(y_true, y_pred):
             pi, mu, sigma = get_mixture_coef(y_pred)
-            kl_loss = - 0.5 * K.mean(1 + K.log(K.square(sigma)) - K.square(mu) - K.square(sigma), axis=[1, 2, 3])
+            kl_loss = -0.5 * K.mean(
+                1 + K.log(K.square(sigma)) - K.square(mu) - K.square(sigma),
+                axis=[1, 2, 3],
+            )
             return kl_loss
 
-        def loss_func(y_true, y_pred):
-            return r_loss(y_true, y_pred)
+        def loss_function(y_true, y_pred):
+            return reconstruction_loss(y_true, y_pred)
 
-        rnn.compile(loss=loss_func, optimizer='rmsprop', metrics=[r_loss, kl_loss])
+        rnn.compile(
+            loss=loss_function,
+            optimizer="rmsprop",
+            metrics=[reconstruction_loss, kl_loss],
+        )
 
         return (rnn, forward)
 
@@ -95,30 +110,40 @@ class RNN():
         self.model.load_weights(filepath)
 
     def train(self, rnn_input, rnn_output, validation_split=0.2):
-        earlystop = EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=5, verbose=2, mode='auto')
+        earlystop = EarlyStopping(
+            monitor="val_loss", min_delta=0.0001, patience=5, verbose=2, mode="auto"
+        )
         callbacks_list = [earlystop]
-        print('--------------')
-        self.model.fit(rnn_input, rnn_output,
-                       shuffle=True,
-                       epochs=config.RNN_EPOCHS,
-                       batch_size=config.RNN_BATCH_SIZE,
-                       validation_split=validation_split,
-                       callbacks=callbacks_list)
+        print("--------------")
+        self.model.fit(
+            rnn_input,
+            rnn_output,
+            shuffle=True,
+            epochs=config.RNN_EPOCHS,
+            batch_size=config.RNN_BATCH_SIZE,
+            validation_split=validation_split,
+            callbacks=callbacks_list,
+        )
 
-        self.model.save_weights('./weights/rnn/weights_' + sys.argv[1] + '.h5')
+        self.model.save_weights("./weights/rnn/weights_" + sys.argv[1] + ".h5")
 
     def save_weights(self, filepath):
         self.model.save_weights(filepath)
+
 
 def main():
     rnn = RNN()
 
     if not config.NEW_MODEL:
-        rnn.set_weights('./weights/rnn/weights_' + sys.argv[1] + '.h5')
+        rnn.set_weights("./weights/rnn/weights_" + sys.argv[1] + ".h5")
 
     for batch_num in range(config.START_BATCH, config.MAX_BATCH + 1):
-        new_rnn_input = np.load('./data/' + sys.argv[1] + '/rnn_input_' + str(batch_num) + '.npy')
-        new_rnn_output = np.load('./data/' + sys.argv[1] + '/rnn_output_' + str(batch_num) + '.npy')
+        new_rnn_input = np.load(
+            "./data/" + sys.argv[1] + "/rnn_input_" + str(batch_num) + ".npy"
+        )
+        new_rnn_output = np.load(
+            "./data/" + sys.argv[1] + "/rnn_output_" + str(batch_num) + ".npy"
+        )
 
         if batch_num > config.START_BATCH:
             rnn_input = np.concatenate([rnn_input, new_rnn_input])
@@ -127,6 +152,7 @@ def main():
             rnn_input = new_rnn_input
             rnn_output = new_rnn_output
     rnn.train(rnn_input, rnn_output)
+
 
 if __name__ == "__main__":
     main()
